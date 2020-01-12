@@ -36,6 +36,8 @@ typedef struct client
 
 } client_t;
 
+struct client clients[];
+
 typedef struct client_node
 {
 	struct client * client;
@@ -181,7 +183,7 @@ void run(client_node_t **head)
             (*head) -> client = new;
             (*head) -> next = NULL;
 
-            printf("Conncetd to the client with socket descriptor\n");
+            printf("Connected to the client with socket descriptor\n");
             pthread_create(&thread, 0, process, (void *)new);
             pthread_detach(thread);
         }
