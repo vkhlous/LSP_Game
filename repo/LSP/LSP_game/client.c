@@ -1,16 +1,18 @@
-#include <stdio.h>
+// #include <stdio.h> // ncurses already has it
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-// #include <ncurses.h>  // for gui. will be used later
+#include <pthread.h>
+#include <ncurses.h>  // for gui
 // #include <csignal>  // for signals
 
 //TODO: Remove C
 int port;
 struct hostent * host;
 int sock;
+int ch;
 int map_height = 31;
 int map_width = 122;
 char ** game_map;
@@ -46,16 +48,18 @@ void * playing_thread();
 
 int main(int argc, char* argv[])
 { 
-	initscr();
-    cbreak();
-    noecho();
-    nodelay(stdscr, TRUE);
-    keypad(stdscr, TRUE);
 
 	process_arg(argc, argv);
 
 	connect_to_server();
 
+	initscr();
+	cbreak();
+	noecho();
+	nodelay(stdscr, TRUE);
+	keypad(stdscr, TRUE);
+	endwin();
+	
 	run();
 
 	endwin();
@@ -103,7 +107,7 @@ void wait_signal()
 				if (rsp_buffer[0] == C_LOBBY_INFO)
 				{
 					printf("LOBBY INFO: %s\n", rsp_buffer);
-					lobby_info(rsp_buffer);
+					lobby_info(rsp_buffer, sizeof(rsp_buffer));
 				} 
 				else if (rsp_buffer[0] == C_GAME_IN_PROGRESS)
 				{
@@ -129,7 +133,7 @@ void wait_signal()
 					read_map(map_height, map_width);
 					GAME_IN_PROGRESS = 1;
 					pthread_create(&thread, 0, playing_thread, NULL);
-					pthread_detach(countdown_thread, NULL);
+					// pthread_detach(countdown_thread, NULL); // playing_thread?
 				}
 				else if (rsp_buffer[0] == C_GAME_UPDATE)
 				{
@@ -152,8 +156,46 @@ void wait_signal()
 	}
 }
 
-void lobby_info() {
+void lobby_info(char * rsp_buffer, int size) {
+	// 2<pievienojušos_spēlētāju_skaits>{<ntā_spēlētāja_segvārds>}
+	char get_buffer[size];
+	strcpy(get_buffer, rsp_buffer);
+	char player_names[8][17];
+	char name[17];
+	int player_count = 0;
+	int counter = 2;
+	while(get_buffer[counter] !=  '>')
+	{
+		player_count *= 10;
+		player_count += get_buffer[counter] - '0';
+		counter++;
+	}
+	counter += 3;
+	for (int i = 0; i < player_count; i++)
+	{
+		int temp = 0;
+		while(get_buffer[counter] != '>')
+		{
+			name[temp] = get_buffer[counter];
+			temp++;
+		}
+		strcpy(player_names[i], name);
+		counter += 2;
+	}
+	if (player_count == 1)
+	{
+		printf("Connected %d player: %s\n", player_count, player_names[0]);
+	}
+	else
+	{
+		printf("Connected %d players: ", player_count);
+		for (int i = 0; i < player_count-1; i++)
+		{
 
+			printf(" %s,", player_names[i]);
+		}
+		printf(" %s", player_names[player_count]);
+	}
 }
 
 void read_map(int map_height, int map_width)
@@ -208,13 +250,21 @@ void read_map(int map_height, int map_width)
 
 void draw_map()
 {
+	// initscr();
+	// cbreak();
+	// noecho();
+	// nodelay(stdscr, TRUE);
+	// keypad(stdscr, TRUE);
+
+    refresh();
+
 	for (int i = 0; i < map_height; i++)
 	{
 		for (int j = 0; j < map_width; j++)
 		{
-			printf("%c", game_map[i][j]);
+			printw("%c", game_map[i][j]);
 		}
-		printf("\n");
+		printw("\n");
 	}
 }
 
@@ -222,17 +272,17 @@ void draw_map()
 void * playing_thread ()
 {
 	int len;
-	char msg_buffer[4];
-    while (game_in_process)
+	char msg_buffer[5];
+    while (GAME_IN_PROGRESS)
 	{
 		// read from console	     
-    	switch ( ch ) {
+    	switch (ch = getch()) {
 	     
 	    	case KEY_UP:
 	    	    printw("Key pressed: UP. ");
 	    	    printw("1<U>\n");
 	    	    
-	    	    msg_buffer = "1<U>";
+	    	    strcpy(msg_buffer, "1<U>");
 
 	    	    len = strlen(msg_buffer);
 
@@ -244,7 +294,7 @@ void * playing_thread ()
 	    	    printw("Key pressed: DOWN. ");
 	    	    printw("1<D>\n");
 
-	    	    msg_buffer = "1<D>";
+	    	    strcpy(msg_buffer, "1<D>");
 
 	    	    len = strlen(msg_buffer);
 
@@ -256,7 +306,7 @@ void * playing_thread ()
 	    	    printw("Key pressed: LEFT. ");
 	    	    printw("1<L>\n");
 
-	    	    msg_buffer = "1<L>";
+	    	    strcpy(msg_buffer, "1<L>");
 
 	    	    len = strlen(msg_buffer);
 
@@ -268,7 +318,7 @@ void * playing_thread ()
 	    	    printw("Key pressed: RIGHT. ");
 	    	    printw("1<R>\n");
 
-	    	    msg_buffer = "1<R>";
+	    	    strcpy(msg_buffer, "1<R>");
 
 	    	    len = strlen(msg_buffer);
 
@@ -282,7 +332,7 @@ void * playing_thread ()
 
 void update_map(char * rsp_buffer, int rsp_size)
 {
-	char * rsp_buffer[rsp_size] = rsp_buffer;
+	// char * rsp_buffer[rsp_size] = rsp_buffer;  // this is wrong
 
 }
 
@@ -393,7 +443,7 @@ void connect_to_server()
     printf("Socket created. Socket descriptor: %d\n", sock);
 
 
-    printf("Connecting to the server on port %d ...", port);
+    printf("Connecting to the server on port %d ...\n", port);
     address.sin_family = AF_INET;
     address.sin_port = htons(port);
 
