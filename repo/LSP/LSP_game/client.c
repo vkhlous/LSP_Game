@@ -13,13 +13,25 @@ int port;
 struct hostent * host;
 int sock;
 int ch;
-int map_height = 31;
-int map_width = 122;
-char ** game_map;
+int map_height = 0;
+int map_width = 0;
+// char ** game_map;
+char game_map[31][121];
 int map_line;
 int start_countdown;
 int GAME_IN_PROGRESS = 0;
 int CONNECTED_TO_SERVER = 0;
+char player_names[8][17];
+
+typedef struct client
+{
+    char* segvards;
+    char symbol;
+    int points;
+    int x;
+    int y;
+
+} client_t;
 
 #define MSG_JOIN_GAME "0<%s>"
 #define SIZE_MSG_JOIN_GAME 20
@@ -45,6 +57,7 @@ void lobby_info();
 void game_end();
 void force_quit();
 void * playing_thread();
+void initialise_players();
 
 int main(int argc, char* argv[])
 { 
@@ -71,7 +84,9 @@ int main(int argc, char* argv[])
 
 void run()
 {
-	//1. Set segvards  
+	//1. Set segvards
+	initialise_players();
+
 	try_to_join_game();
 
 	wait_signal();
@@ -81,6 +96,44 @@ void run()
 	}
 
 	return;
+}
+
+void initialize_players()
+{
+    int i = 0;
+    for (; i < PLAYERS_COUNT; i++)
+    {
+        if (i+1 == A_CLIENT_NR)
+        {
+            players[i].symbol = A_CLIENT_CHAR;
+            players[i].active = 0;
+            players[i].x = A_CLIENT_X;
+            players[i].y = A_CLIENT_Y;
+        }
+        else if (i+1 == B_CLIENT_NR)
+        {
+            players[i].symbol = B_CLIENT_CHAR;
+            players[i].active = 0;
+            players[i].x = B_CLIENT_X;
+            players[i].y = B_CLIENT_Y;
+        }
+        else if (i+1 == C_CLIENT_NR)
+        {
+            players[i].symbol = C_CLIENT_CHAR;
+            players[i].active = 0;
+            players[i].x = C_CLIENT_X;
+            players[i].y = C_CLIENT_Y;
+
+        }
+        else if (i+1 == D_CLIENT_NR)
+        {
+            players[i].symbol = D_CLIENT_CHAR;
+            players[i].active = 0;
+            players[i].x = D_CLIENT_X;
+            players[i].y = D_CLIENT_Y;
+
+        }
+    }
 }
 
 void wait_signal()
@@ -98,25 +151,32 @@ void wait_signal()
 			rsp_buffer = (char *)malloc((len+1)*sizeof(char));
 			rsp_buffer[len] = 0;
 
+			printf("rsp_buffer is %d\n", rsp_buffer[0] - '0');
+
 			if (read(sock, rsp_buffer, len) == -1)
 			{
 				fprintf(stderr, ": error receiving data \n");
 				perror("Error description: ");
 			} else {
 
-				if (rsp_buffer[0] == C_LOBBY_INFO)
+				if ((rsp_buffer[0] - '0') == C_LOBBY_INFO)
 				{
 					printf("LOBBY INFO: %s\n", rsp_buffer);
-					lobby_info(rsp_buffer, sizeof(rsp_buffer));
+					lobby_info(rsp_buffer, strlen(rsp_buffer));
 				} 
-				else if (rsp_buffer[0] == C_GAME_IN_PROGRESS)
+				else if ((rsp_buffer[0] - '0') == C_GAME_IN_PROGRESS)
 				{
 					printf("GAME IN PROGRESS: %s\n", rsp_buffer);
 				}
-				else if (rsp_buffer[0] == C_GAME_START)
+				else if ((rsp_buffer[0] - '0') == C_GAME_START)
 				{
 					printf("GAME START %s\n", rsp_buffer);
 					int counter = 2;
+					while (rsp_buffer[counter] != '}')
+					{
+						counter++;
+					}
+					counter += 2;
 					while(rsp_buffer[counter] !=  '>')
 					{
 						map_height *= 10;
@@ -130,21 +190,22 @@ void wait_signal()
 						map_width += rsp_buffer[counter] - '0';
 						counter++;
 					}
+					printf("height: %d, width: %d\n", map_height, map_width);
 					read_map(map_height, map_width);
 					GAME_IN_PROGRESS = 1;
-					pthread_create(&thread, 0, playing_thread, NULL);
-					// pthread_detach(countdown_thread, NULL); // playing_thread?
+					// pthread_create(&thread, 0, playing_thread, NULL);
+					// pthread_detach(playing_thread);
 				}
-				else if (rsp_buffer[0] == C_GAME_UPDATE)
+				else if ((rsp_buffer[0] - '0') == C_GAME_UPDATE)
 				{
 					printf("GAME UPDATE %s\n", rsp_buffer);
-					update_map(rsp_buffer, sizeof(rsp_buffer));
+					update_map(rsp_buffer, strlen(rsp_buffer));
 				}
-				else if (rsp_buffer[0] == C_PLAYER_DEAD)
+				else if ((rsp_buffer[0] - '0') == C_PLAYER_DEAD)
 				{
 					printf("PLAYER DEAD %s\n", rsp_buffer);
 				}
-				else if (rsp_buffer[0] == C_GAME_END)
+				else if ((rsp_buffer[0] - '0') == C_GAME_END)
 				{
 					printf("GAME END %s\n", rsp_buffer);
 					game_end();
@@ -160,7 +221,6 @@ void lobby_info(char * rsp_buffer, int size) {
 	// 2<pievienojušos_spēlētāju_skaits>{<ntā_spēlētāja_segvārds>}
 	char get_buffer[size];
 	strcpy(get_buffer, rsp_buffer);
-	char player_names[8][17];
 	char name[17];
 	int player_count = 0;
 	int counter = 2;
@@ -178,29 +238,32 @@ void lobby_info(char * rsp_buffer, int size) {
 		{
 			name[temp] = get_buffer[counter];
 			temp++;
+			counter++;
 		}
-		strcpy(player_names[i], name);
-		counter += 2;
+		name[temp+1] = '\0';
+		strncpy(player_names[i], name, temp);
+		counter += 3;
 	}
 	if (player_count == 1)
 	{
-		printf("Connected %d player: %s\n", player_count, player_names[0]);
+		printf("Connected %d player: %s", player_count, player_names[0]);
 	}
 	else
 	{
 		printf("Connected %d players: ", player_count);
 		for (int i = 0; i < player_count-1; i++)
 		{
-
 			printf(" %s,", player_names[i]);
 		}
-		printf(" %s", player_names[player_count]);
+		printf(" %s", player_names[player_count-1]);
 	}
+	printf("\n");
 }
 
 void read_map(int map_height, int map_width)
 {
 	map_line = 0;
+	int map_row = 0;
 	// game_map[map_height][map_width];
 	char * rsp_buffer;
 	int len;
@@ -218,30 +281,40 @@ void read_map(int map_height, int map_width)
 				fprintf(stderr, ": error receiving data \n");
 			    perror("Error description: ");
 			} else {
-
-				if (rsp_buffer[0] == C_MAP_ROW)
+				printf("rsp_buffer size: %d\n", strlen(rsp_buffer));
+				printf("rsp_buffer: %s\n", rsp_buffer);
+				if ((rsp_buffer[0] - '0') == C_MAP_ROW)
 				{
 					printf("MAP ROW: %s\n", rsp_buffer);
-
+					map_row = 0;
 					int counter = 2;
-					map_line = 0;
+					printf("MAP_ROW rsp_buffer: %c\n", rsp_buffer[counter]);
 					while(rsp_buffer[counter] !=  '>')
 					{
-						map_line *= 10;
-						map_line += rsp_buffer[counter] - '0';
+						map_row *= 10;
+						map_row += rsp_buffer[counter] - '0';
+						printf("map_row: %d\n", map_row);
 						counter++;
 					}
 					counter += 2;
+					int temp = 0;
+					printf("MAP line: %c\n", rsp_buffer[counter]);
 					while (rsp_buffer[counter] != '>') {
-						for (int j = 0; j < map_width; j++) {
-							game_map[map_line][j] = rsp_buffer[counter];
-						}
+						printf("map_row: %d\t", map_row);
+						printf("counter: %d\n", counter);
+						printf("temp: %d\n", temp);
+						printf("rsp_buffer row: %c\n", rsp_buffer[counter]);
+						game_map[map_row][temp] = rsp_buffer[counter];
+						printf("game_map row: %c\n", game_map[map_row][temp]);
 						counter++;
+						temp++;
 					}
 				} else {
 					printf("ERROR: inconsequent game map data\n");
 					force_quit();
 				}
+				printf("map_line: %d\n", map_line);
+				map_line++;
 			}
 		}
 	}
@@ -256,15 +329,15 @@ void draw_map()
 	// nodelay(stdscr, TRUE);
 	// keypad(stdscr, TRUE);
 
-    refresh();
+    // refresh();
 
 	for (int i = 0; i < map_height; i++)
 	{
 		for (int j = 0; j < map_width; j++)
 		{
-			printw("%c", game_map[i][j]);
+			printf("%c", game_map[i][j]);
 		}
-		printw("\n");
+		printf("\n");
 	}
 }
 
@@ -287,7 +360,7 @@ void * playing_thread ()
 	    	    len = strlen(msg_buffer);
 
 	    	    send(sock, &len, sizeof(int), 0);
-	    	    send(sock, msg_buffer, sizeof(msg_buffer), 0);
+	    	    send(sock, msg_buffer, strlen(msg_buffer), 0);
 	    	    break;
 	     
 	    	case KEY_DOWN:
@@ -299,7 +372,7 @@ void * playing_thread ()
 	    	    len = strlen(msg_buffer);
 
 	    	    send(sock, &len, sizeof(int), 0);
-	    	    send(sock, msg_buffer, sizeof(msg_buffer), 0);
+	    	    send(sock, msg_buffer, strlen(msg_buffer), 0);
 	    	    break;
 	     
 	    	case KEY_LEFT:
@@ -311,7 +384,7 @@ void * playing_thread ()
 	    	    len = strlen(msg_buffer);
 
 	    	    send(sock, &len, sizeof(int), 0);
-	    	    send(sock, msg_buffer, sizeof(msg_buffer), 0);
+	    	    send(sock, msg_buffer, strlen(msg_buffer), 0);
 	    	    break;
 	     
 	    	case KEY_RIGHT:
@@ -323,7 +396,7 @@ void * playing_thread ()
 	    	    len = strlen(msg_buffer);
 
 	    	    send(sock, &len, sizeof(int), 0);
-	    	    send(sock, msg_buffer, sizeof(msg_buffer), 0);
+	    	    send(sock, msg_buffer, strlen(msg_buffer), 0);
 	    	    break;
     	}
 	}
@@ -332,7 +405,9 @@ void * playing_thread ()
 
 void update_map(char * rsp_buffer, int rsp_size)
 {
-	// char * rsp_buffer[rsp_size] = rsp_buffer;  // this is wrong
+	// 7<spēlētāju_skaits>{<ntā_spēlētāja_x_koordināta><ntā_spēlētāja_y_koordināta><ntā_spēlētāja_punkti>}<ēdienu_skaits>{<ntā_ēdiena_x_koordināta><ntā_ēdiena_y_koordināta>}
+	char get_buffer[size];
+	strcpy(get_buffer, rsp_buffer);
 
 }
 
@@ -366,7 +441,7 @@ void try_to_join_game()
 	len = strlen(msg_buffer);
 
 	send(sock, &len, sizeof(int), 0);
-	send(sock, msg_buffer, sizeof(msg_buffer), 0);
+	send(sock, msg_buffer, strlen(msg_buffer), 0);
 
 	//LOBBY_INFO - veiksmīga pievienošanās.
 	//GAME_IN_PROGRESS - spēle jau notiek.
@@ -383,16 +458,19 @@ void try_to_join_game()
 		    perror("Error description: ");
 		} else {
 
-			if (rsp_buffer[0] == C_LOBBY_INFO)
+			lobby_info(rsp_buffer, strlen(rsp_buffer));
+			/*
+			if ((rsp_buffer[0] - '0') == C_LOBBY_INFO)
 			{
+				printf("lobby indo 1\n");
 				printf("LOBBY INFO: %s\n", rsp_buffer);
 			} 
-			else if (rsp_buffer[0] == C_USERNAME_TAKEN)
+			else if ((rsp_buffer[0] - '0') == C_USERNAME_TAKEN)
 			{
 				printf("USERNAME TAKEN: %s\n", rsp_buffer);
 			}
+			*/
 		}
-
 		free(rsp_buffer);
 	}
 
