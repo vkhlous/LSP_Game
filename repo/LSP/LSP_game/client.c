@@ -18,15 +18,16 @@ int map_width = 0;
 // char ** game_map;
 char game_map[31][121];
 int map_line;
-int start_countdown;
+// int start_countdown;
 int GAME_IN_PROGRESS = 0;
 int CONNECTED_TO_SERVER = 0;
-char player_names[8][17];
+// char player_names[8][17];
 
 typedef struct client
 {
     char* segvards;
     char symbol;
+    int active;
     int points;
     int x;
     int y;
@@ -45,6 +46,22 @@ typedef struct client
 #define C_PLAYER_DEAD 8
 #define C_GAME_END 9
 
+#define A_CLIENT_CHAR 'A'
+#define A_CLIENT_NR 1
+
+#define B_CLIENT_CHAR 'B'
+#define B_CLIENT_NR 2
+
+#define C_CLIENT_CHAR 'C'
+#define C_CLIENT_NR 3
+
+#define D_CLIENT_CHAR 'D'
+#define D_CLIENT_NR 4
+
+#define PLAYERS_COUNT 4
+
+struct client players[8];
+
 void process_arg(int argc, char* argv[]);
 void connect_to_server();
 void try_to_join_game();
@@ -57,7 +74,8 @@ void lobby_info();
 void game_end();
 void force_quit();
 void * playing_thread();
-void initialise_players();
+void initialize_players();
+void set_players_coordinats();
 
 int main(int argc, char* argv[])
 { 
@@ -85,7 +103,7 @@ int main(int argc, char* argv[])
 void run()
 {
 	//1. Set segvards
-	initialise_players();
+	initialize_players();
 
 	try_to_join_game();
 
@@ -107,31 +125,21 @@ void initialize_players()
         {
             players[i].symbol = A_CLIENT_CHAR;
             players[i].active = 0;
-            players[i].x = A_CLIENT_X;
-            players[i].y = A_CLIENT_Y;
         }
         else if (i+1 == B_CLIENT_NR)
         {
             players[i].symbol = B_CLIENT_CHAR;
             players[i].active = 0;
-            players[i].x = B_CLIENT_X;
-            players[i].y = B_CLIENT_Y;
         }
         else if (i+1 == C_CLIENT_NR)
         {
             players[i].symbol = C_CLIENT_CHAR;
             players[i].active = 0;
-            players[i].x = C_CLIENT_X;
-            players[i].y = C_CLIENT_Y;
-
         }
         else if (i+1 == D_CLIENT_NR)
         {
             players[i].symbol = D_CLIENT_CHAR;
             players[i].active = 0;
-            players[i].x = D_CLIENT_X;
-            players[i].y = D_CLIENT_Y;
-
         }
     }
 }
@@ -145,6 +153,7 @@ void wait_signal()
 
 	while(CONNECTED_TO_SERVER == 1)
 	{
+		printf("I AM IN SERVER PART\n");
 		read (sock, &len, sizeof(int));
 		if (len > 0)
 		{
@@ -219,11 +228,13 @@ void wait_signal()
 
 void lobby_info(char * rsp_buffer, int size) {
 	// 2<pievienojušos_spēlētāju_skaits>{<ntā_spēlētāja_segvārds>}
+	printf("Started in lobby_info\n");
 	char get_buffer[size];
 	strcpy(get_buffer, rsp_buffer);
 	char name[17];
 	int player_count = 0;
 	int counter = 2;
+	printf("buffer in lobby_info: %s\n", get_buffer);
 	while(get_buffer[counter] !=  '>')
 	{
 		player_count *= 10;
@@ -241,21 +252,25 @@ void lobby_info(char * rsp_buffer, int size) {
 			counter++;
 		}
 		name[temp+1] = '\0';
-		strncpy(player_names[i], name, temp);
+		// strncpy(player_names[i], name, temp);
+		players[i].active = 1;
+	    players[i].segvards = (char *)malloc(16);
+	    printf("player segvards: %s\n", players[i].segvards);
+	    players[i].segvards = strdup(name);
 		counter += 3;
 	}
 	if (player_count == 1)
 	{
-		printf("Connected %d player: %s", player_count, player_names[0]);
+		printf("Connected %d player: %s", player_count, players[0].segvards);
 	}
 	else
 	{
 		printf("Connected %d players: ", player_count);
 		for (int i = 0; i < player_count-1; i++)
 		{
-			printf(" %s,", player_names[i]);
+			printf(" %s,", players[i].segvards);
 		}
-		printf(" %s", player_names[player_count-1]);
+		printf(" %s", players[player_count-1].segvards);
 	}
 	printf("\n");
 }
@@ -329,7 +344,7 @@ void draw_map()
 	// nodelay(stdscr, TRUE);
 	// keypad(stdscr, TRUE);
 
-    // refresh();
+    refresh();
 
 	for (int i = 0; i < map_height; i++)
 	{
@@ -338,6 +353,7 @@ void draw_map()
 			printf("%c", game_map[i][j]);
 		}
 		printf("\n");
+		move(i,0);
 	}
 }
 
@@ -403,12 +419,72 @@ void * playing_thread ()
 }
 
 
-void update_map(char * rsp_buffer, int rsp_size)
+void update_map(char * rsp_buffer, int size)
 {
 	// 7<spēlētāju_skaits>{<ntā_spēlētāja_x_koordināta><ntā_spēlētāja_y_koordināta><ntā_spēlētāja_punkti>}<ēdienu_skaits>{<ntā_ēdiena_x_koordināta><ntā_ēdiena_y_koordināta>}
+	// 7<2>{<1><1><0>,<119><29><0>}<0>{(null)}
 	char get_buffer[size];
 	strcpy(get_buffer, rsp_buffer);
+	int player_count = 0;
+	int counter = 2;
+	int position;
+	int points = 0;
+	printf("buffer in lobby_info: %s\n", get_buffer);
+	while(get_buffer[counter] !=  '>')
+	{
+		player_count *= 10;
+		player_count += get_buffer[counter] - '0';
+		counter++;
+	}
+	counter += 3;
+	for (int i = 0; i < player_count; i++)
+	{
+		position = 0;
+		while(get_buffer[counter] !=  '>')
+		{
+			position *= 10;
+			position += get_buffer[counter] - '0';
+			counter++;
+		}
+		players[i].x = position;
+		printf("player %s x position: %d\n", players[i].segvards, position);
+		counter += 2;
+		position = 0;
+		while(get_buffer[counter] !=  '>')
+		{
+			position *= 10;
+			position += get_buffer[counter] - '0';
+			counter++;
+		}
+		players[i].y = position;
+		printf("player %s y position: %d\n", players[i].segvards, position);
+		counter += 2;
+		while(get_buffer[counter] !=  '>')
+		{
+			points *= 10;
+			points += get_buffer[counter] - '0';
+			counter++;
+		}
+		players[i].points = points;
+		printf("player %s points: %d\n", players[i].segvards, points);
+		counter += 3;
+	}
+	counter += 3;
+	set_players_coordinats();
+}
 
+void set_players_coordinats() {
+    int i = 0;
+    for (; i < PLAYERS_COUNT; i++)
+    {
+        printf("Set for active client: %c, %d. Coordinats: x - %d; y - %d\n", players[i].symbol, players[i].active, players[i].x, players[i].y);
+        if (players[i].active == 1)
+        {
+           // printf("Game map: %d, {%d}{%d}\n", game_map[30][120], players[i].y, players[i].x);
+            game_map[players[i].y][players[i].x] = players[i].symbol;
+        }
+    }
+    draw_map();
 }
 
 void force_quit()
@@ -451,13 +527,12 @@ void try_to_join_game()
 	{
 		rsp_buffer = (char *)malloc((len+1)*sizeof(char));
 	    rsp_buffer[len] = 0;
-
 		if (read(sock, rsp_buffer, len) == -1)
 		{
 			fprintf(stderr, ": error receiving data \n");
 		    perror("Error description: ");
 		} else {
-
+			printf("bout to send lobby_info\n");
 			lobby_info(rsp_buffer, strlen(rsp_buffer));
 			/*
 			if ((rsp_buffer[0] - '0') == C_LOBBY_INFO)
